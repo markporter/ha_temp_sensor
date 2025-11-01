@@ -4,14 +4,14 @@
 
 substitutions:
   device_name: "s1"
-  friendly_name: "Environmental Sensor 01 (${device_name})"
+  friendly_name: "ENV-${device_name}"
   device_description: "Battery powered environmental sensor with BME680"
   
   # Deep sleep configuration 
   # IMPORTANT: Set to "false" for initial setup and programming
   # Set to "true" for battery-powered operation (requires D0-RST connection)
   deep_sleep_enabled: "true"  # Change to "true" to enable deep sleep mode
-  sleep_duration: "1min"  # How long to sleep between readings (only when deep sleep enabled)
+  # NOTE: Sleep duration now controlled via runtime "Sleep Interval" number input
   
   # Battery monitoring
   battery_update_interval: "60s"  # Battery check interval (normal mode)
@@ -34,44 +34,64 @@ esphome:
     then:
       - logger.log: "Device booted, starting sensor readings..."
       - delay: 2s  # Allow sensors to stabilize
-      # Send wake-up notification to Home Assistant - DISABLED to save memory
-      - delay: 3s  # Wait for battery sensor to be ready
-      # - homeassistant.service:
-      #     service: notify.notify
-      #     data:
-      #       title: "${friendly_name}"
-      #       message: "Device woke up and is taking sensor readings"
+      
+      # Wait for Home Assistant API connection to sync entity states
+      - logger.log: "Waiting for Home Assistant connection to sync calibration values..."
+      - delay: 10s  # Allow HA to connect and sync number input states
+      
+      # Log the current calibration values and switch states after HA sync
+      - logger.log: 
+          format: "Calibration values - Temp: %.1f°F, Pressure: %.1f hPa, Humidity: %.1f%%, Voltage: %.2fx"
+          args: 
+            - 'id(temperature_offset_input).state'
+            - 'id(pressure_offset_input).state' 
+            - 'id(humidity_offset_input).state'
+            - 'id(voltage_multiplier_input).state'
+      - logger.log:
+          format: "Gas Resistance Offset: %.0fΩ"
+          args: 
+            - 'id(gas_resistance_offset_input).state'
+      - logger.log:
+          format: "Deep Sleep Settings - Switch: %s, Interval: %.1f minutes"
+          args: 
+            - 'id(deep_sleep_toggle).state ? "ENABLED" : "DISABLED"'
+            - 'id(sleep_interval_input).state'
+      
+      # Update deep sleep duration based on saved interval value
+      - lambda: |-
+          float minutes = id(sleep_interval_input).state;
+          uint32_t milliseconds = (uint32_t)(minutes * 60.0 * 1000.0);
+          ESP_LOGI("deep_sleep", "Setting initial sleep duration to %.1f minutes (%u ms)", minutes, milliseconds);
+          id(deep_sleep_control).set_sleep_duration(milliseconds);
+      
+      # Always take sensor readings first
+      - component.update: bme680_sensor
+      - component.update: battery_voltage
+      - delay: 5s  # Allow readings to complete and transmit
+      
+      # Now check deep sleep settings
       - if:
           condition:
             # Check both compile-time setting AND runtime switch state
             lambda: |-
               bool compile_time_enabled = (strcmp("${deep_sleep_enabled}", "true") == 0);
               bool runtime_switch_enabled = id(deep_sleep_toggle).state;
+              ESP_LOGI("main", "Compile-time deep sleep: %s", compile_time_enabled ? "enabled" : "disabled");
+              ESP_LOGI("main", "Runtime switch state: %s", runtime_switch_enabled ? "enabled" : "disabled");
               return compile_time_enabled && runtime_switch_enabled;
           then:
-            - logger.log: "Deep sleep mode active - taking readings and sleeping"
-            # In deep sleep mode, take readings immediately then sleep
-            - component.update: bme680_sensor
-            - component.update: battery_voltage
-            - delay: 20s  # Allow readings to complete and transmit
+            - logger.log: "Deep sleep mode active - entering sleep after readings"
+            - delay: 5s  # Final delay before sleep
             - logger.log: "Entering deep sleep"
-            # double check that we still have deep sleep enabled
-            - if:
-                condition:
-                  lambda: 'return strcmp("${deep_sleep_enabled}", "true") == 0;'
-                then:
-                  - logger.log: "Deep sleep still enabled - proceeding to sleep"
-                  - deep_sleep.enter: deep_sleep_control
-                else:
-                  - logger.log: "Deep sleep disabled at runtime - staying awake"
+            - deep_sleep.enter: deep_sleep_control
           else:
             - if:
                 condition:
                   lambda: 'return strcmp("${deep_sleep_enabled}", "true") == 0;'
                 then:
-                  - logger.log: "Deep sleep compiled but disabled by switch - normal operation"
+                  - logger.log: "SUCCESS: Deep sleep compiled but disabled by HA switch - staying awake for normal operation"
                 else:
-                  - logger.log: "Normal mode - continuous operation with 30s intervals"
+                  - logger.log: "Deep sleep not compiled - normal mode with 30s intervals"
 
 # WiFi configuration
 wifi:
@@ -88,8 +108,8 @@ captive_portal:
 
 # Enable logging
 logger:
-  level: WARN  # Reduced logging to save memory
-  baud_rate: 0  # Disable serial logging to save power
+  level: INFO  # Show INFO level logs including logger.log messages
+  baud_rate: 115200  # Enable serial logging for debugging
 
 # Enable Home Assistant API
 api:
@@ -115,20 +135,20 @@ ota:
   platform: esphome
   password: !secret ota_password
 
-# Web server for diagnostics (optional - disable to save power)
-# DISABLED: Saves memory for battery-powered operation
-# web_server:
-#   port: 80
-#   auth:
-#     username: !secret web_username
-#     password: !secret web_password
+# Web server for diagnostics (optional - disable to save power)  
+# ENABLED: For viewing logs and diagnostics
+web_server:
+  port: 80
+  # auth:
+  #   username: !secret web_username
+  #   password: !secret web_password
 
 # Deep sleep configuration (only active when deep_sleep_enabled is "true")
 # IMPORTANT: For deep sleep to work, you MUST connect GPIO16 (D0) to RST pin
 # This allows the ESP8266 to wake itself up from deep sleep
 deep_sleep:
   id: deep_sleep_control
-  sleep_duration: ${sleep_duration}
+  sleep_duration: 1min  # Default duration, will be updated dynamically
   # Note: ESP8266 doesn't support wakeup_pin - uses GPIO16 to RST connection instead
 
 # I2C configuration for BME680
@@ -144,7 +164,7 @@ sensor:
   - platform: bme680
     id: bme680_sensor
     temperature:
-      name: "${friendly_name} Temperature"
+      name: "Temperature"
       id: temperature
       accuracy_decimals: 1
       filters:
@@ -154,23 +174,29 @@ sensor:
             float offset_c = offset_f / 1.8;  // Convert Fahrenheit offset to Celsius
             return x + offset_c;
     pressure:
-      name: "${friendly_name} Pressure"
+      name: "Pressure"
       id: pressure
       accuracy_decimals: 1
       filters:
         # Runtime calibration via lambda using number input
         - lambda: 'return x + id(pressure_offset_input).state;'
     humidity:
-      name: "${friendly_name} Humidity"
+      name: "Humidity"
       id: humidity
       accuracy_decimals: 1
       filters:
         # Runtime calibration via lambda using number input
         - lambda: 'return x + id(humidity_offset_input).state;'
     gas_resistance:
-      name: "${friendly_name} Gas Resistance"
+      name: "Gas Resistance"
       id: gas_resistance
       accuracy_decimals: 0
+      filters:
+        # Runtime calibration via lambda using number input (convert kΩ to Ω)
+        - lambda: |-
+            float offset_kohms = id(gas_resistance_offset_input).state;
+            float offset_ohms = offset_kohms * 1000.0;  // Convert kΩ to Ω
+            return x + offset_ohms;
     address: 0x77  # Default I2C address (0x76 is also common)
     update_interval: never  # Will be manually triggered in both modes
     
@@ -183,7 +209,7 @@ sensor:
   # Battery voltage monitoring
   - platform: adc
     pin: A0
-    name: "${friendly_name} Battery Voltage"
+    name: "Battery Voltage"
     id: battery_voltage
     update_interval: ${battery_update_interval}
     accuracy_decimals: 2
@@ -213,7 +239,7 @@ sensor:
   
   # Battery level percentage (calculated from voltage)
   - platform: template
-    name: "${friendly_name} Battery Level"
+    name: "Battery Level"
     id: battery_level
     unit_of_measurement: "%"
     device_class: battery
@@ -271,13 +297,14 @@ sensor:
   
   # Air Quality Index (calculated from gas resistance)
   - platform: template
-    name: "${friendly_name} Air Quality Index"
+    name: "Air Quality Index"
     id: air_quality_index
     unit_of_measurement: "AQI"
     device_class: aqi
     state_class: measurement
     accuracy_decimals: 0
     icon: "mdi:air-filter"
+    entity_category: diagnostic
     lambda: |-
       float gas_val = id(gas_resistance).state;
       
@@ -298,11 +325,10 @@ sensor:
       } else {
         return 300;  // Very Unhealthy/Hazardous (251+ AQI)
       }
-    update_interval: ${battery_update_interval}
   
   # Air Quality Percentage (0-100% scale)
   - platform: template
-    name: "${friendly_name} Air Quality Percentage"
+    name: "Air Quality Percentage"
     id: air_quality_percentage
     unit_of_measurement: "%"
     state_class: measurement
@@ -322,7 +348,6 @@ sensor:
       // Linear interpolation between min and max
       float percentage = ((gas_val - min_resistance) / (max_resistance - min_resistance)) * 100.0;
       return percentage;
-    update_interval: ${battery_update_interval}
 
 # Text sensors for diagnostics
 text_sensor:
@@ -346,7 +371,7 @@ text_sensor:
   
   # Power source detection
   - platform: template
-    name: "${friendly_name} Power Source"
+    name: "Power Source"
     id: power_source
     entity_category: diagnostic
     lambda: |-
@@ -362,7 +387,7 @@ text_sensor:
   
   # Air Quality Description
   - platform: template
-    name: "${friendly_name} Air Quality"
+    name: "Air Quality"
     id: air_quality_text
     icon: "mdi:air-filter"
     lambda: |-
@@ -381,13 +406,12 @@ text_sensor:
       } else {
         return {"Very Unhealthy"};
       }
-    update_interval: ${battery_update_interval}
 
 # Binary sensors
 binary_sensor:
   # Device status
   - platform: status
-    name: "${friendly_name} Status"
+    name: "Status"
     entity_category: diagnostic
   
   # Low battery alert
@@ -405,7 +429,7 @@ number:
   
   # Temperature calibration offset (runtime adjustable in Fahrenheit)
   - platform: template
-    name: "${friendly_name} Temperature Offset"
+    name: "Temperature Offset"
     id: temperature_offset_input
     entity_category: config
     min_value: -18.0  # -10°C in Fahrenheit
@@ -416,6 +440,7 @@ number:
     icon: "mdi:thermometer"
     optimistic: true
     restore_value: true
+    # No initial_value - will restore from HA or use min_value on first boot
     on_value:
       then:
         - logger.log:
@@ -424,7 +449,7 @@ number:
   
   # Pressure calibration offset (runtime adjustable)
   - platform: template
-    name: "${friendly_name} Pressure Offset"
+    name: "Pressure Offset"
     id: pressure_offset_input
     entity_category: config
     min_value: -50.0
@@ -435,6 +460,7 @@ number:
     icon: "mdi:gauge"
     optimistic: true
     restore_value: true
+    # No initial_value - will restore from HA or use min_value on first boot
     on_value:
       then:
         - logger.log:
@@ -443,7 +469,7 @@ number:
   
   # Humidity calibration offset (runtime adjustable)
   - platform: template
-    name: "${friendly_name} Humidity Offset"
+    name: "Humidity Offset"
     id: humidity_offset_input
     entity_category: config
     min_value: -20.0
@@ -454,6 +480,7 @@ number:
     icon: "mdi:water-percent"
     optimistic: true
     restore_value: true
+    # No initial_value - will restore from HA or use min_value on first boot
     on_value:
       then:
         - logger.log:
@@ -461,9 +488,10 @@ number:
             args: ['x']
   
   # Voltage divider multiplier (runtime adjustable for easy calibration)
-  # NOTE: Set to 7.3 in HA on first setup - will restore HA values on reboots
+  # NOTE: Set to your calibrated value (7.3) in HA - will restore from HA on subsequent boots
   - platform: template
-    name: "${friendly_name} Voltage Multiplier"
+    name: "Voltage Multiplier"
+    entity_category: config
     id: voltage_multiplier_input
     min_value: 0.1
     max_value: 10.0
@@ -473,42 +501,98 @@ number:
     icon: "mdi:multiplication"
     optimistic: true
     restore_value: true
+    # No initial_value - will restore from HA. Set to 7.3 in HA for your hardware
     on_value:
       then:
         - logger.log:
             format: "Voltage multiplier changed to %.2fx (takes effect immediately)"
             args: ['x']
 
+  # Gas resistance calibration offset (runtime adjustable)
+  - platform: template
+    name: "Gas Resistance Offset"
+    id: gas_resistance_offset_input
+    entity_category: config
+    min_value: -100.0  # -100kΩ adjustment range
+    max_value: 100.0   # +100kΩ adjustment range
+    step: 1.0
+    mode: box
+    unit_of_measurement: "kΩ"
+    icon: "mdi:gas-cylinder"
+    optimistic: true
+    restore_value: true
+    # No initial_value - will restore from HA or use min_value on first boot
+    on_value:
+      then:
+        - logger.log:
+            format: "Gas resistance offset changed to %.1fkΩ (takes effect immediately)"
+            args: ['x']
+
+  # Sleep interval (runtime adjustable in minutes)
+  - platform: template
+    name: "Sleep Interval"
+    id: sleep_interval_input
+    entity_category: config
+    min_value: 0.5  # 30 seconds minimum
+    max_value: 120.0  # 2 hours maximum
+    step: 0.5
+    mode: box
+    unit_of_measurement: "min"
+    icon: "mdi:sleep"
+    optimistic: true
+    restore_value: true
+    # No initial_value - will restore from HA or use min_value (0.5 min) on first boot
+    on_value:
+      then:
+        - logger.log:
+            format: "Sleep interval changed to %.1f minutes (takes effect on next sleep cycle)"
+            args: ['x']
+        # Update the deep sleep component with new duration
+        - lambda: |-
+            float minutes = x;
+            uint32_t milliseconds = (uint32_t)(minutes * 60.0 * 1000.0);
+            ESP_LOGI("deep_sleep", "Updating sleep duration to %.1f minutes (%u ms)", minutes, milliseconds);
+            id(deep_sleep_control).set_sleep_duration(milliseconds);
+
 # Switches for control
 switch:
   # Restart switch
   - platform: restart
-    name: "${friendly_name} Restart"
+    name: "Restart"
     entity_category: config
   
-  # Deep sleep toggle (takes effect immediately when firmware supports it)
+  # Deep sleep toggle (maintains state properly)
   - platform: template
-    name: "${friendly_name} Deep Sleep Mode"
+    name: "Deep Sleep Mode"
     id: deep_sleep_toggle
     entity_category: config
-    restore_mode: RESTORE_DEFAULT_ON
-    optimistic: true
-    on_turn_on:
-      - logger.log: "Deep sleep enabled via switch"
+    optimistic: true  # Maintain local state to prevent resets
+    restore_mode: RESTORE_DEFAULT_OFF  # Default to OFF for safety, but restore HA changes
+    turn_on_action:
+      - logger.log: "Deep sleep enabled via Home Assistant - will take effect on next boot cycle"
       - if:
           condition:
             lambda: 'return strcmp("${deep_sleep_enabled}", "true") == 0;'
           then:
-            - logger.log: "Deep sleep firmware active - will sleep on next cycle"
+            - logger.log: "Deep sleep firmware active - device will sleep after next readings"
           else:
             - logger.log: "Deep sleep not compiled in firmware - please reflash with deep_sleep_enabled: true"
+    turn_off_action:
+      - logger.log: "Deep sleep DISABLED via Home Assistant - device will stay awake"
+      - homeassistant.service:
+          service: notify.notify
+          data:
+            title: "${friendly_name}"
+            message: "Deep sleep disabled - device will stay awake after next wake cycle"
+    on_turn_on:
+      - logger.log: "Deep sleep switch turned ON"
     on_turn_off:
-      - logger.log: "Deep sleep disabled via switch - switching to normal mode"
+      - logger.log: "Deep sleep switch turned OFF"
 
 # Buttons for manual control
 button:
   - platform: template
-    name: "${friendly_name} Enter Deep Sleep Now"
+    name: "Enter Deep Sleep Now"
     id: manual_deep_sleep
     entity_category: config
     on_press:
