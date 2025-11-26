@@ -440,7 +440,7 @@ number:
     icon: "mdi:thermometer"
     optimistic: true
     restore_value: true
-    # No initial_value - will restore from HA or use min_value on first boot
+    # No retain, will restore from HA
     on_value:
       then:
         - logger.log:
@@ -460,7 +460,7 @@ number:
     icon: "mdi:gauge"
     optimistic: true
     restore_value: true
-    # No initial_value - will restore from HA or use min_value on first boot
+    # No retain, will restore from HA
     on_value:
       then:
         - logger.log:
@@ -480,7 +480,7 @@ number:
     icon: "mdi:water-percent"
     optimistic: true
     restore_value: true
-    # No initial_value - will restore from HA or use min_value on first boot
+    # No retain, will restore from HA
     on_value:
       then:
         - logger.log:
@@ -501,7 +501,7 @@ number:
     icon: "mdi:multiplication"
     optimistic: true
     restore_value: true
-    # No initial_value - will restore from HA. Set to 7.3 in HA for your hardware
+    # No retain, will restore from HA
     on_value:
       then:
         - logger.log:
@@ -521,7 +521,7 @@ number:
     icon: "mdi:gas-cylinder"
     optimistic: true
     restore_value: true
-    # No initial_value - will restore from HA or use min_value on first boot
+    # No retain, will restore from HA
     on_value:
       then:
         - logger.log:
@@ -541,13 +541,12 @@ number:
     icon: "mdi:sleep"
     optimistic: true
     restore_value: true
-    # No initial_value - will restore from HA or use min_value (0.5 min) on first boot
+    # No retain, will restore from HA
     on_value:
       then:
         - logger.log:
             format: "Sleep interval changed to %.1f minutes (takes effect on next sleep cycle)"
             args: ['x']
-        # Update the deep sleep component with new duration
         - lambda: |-
             float minutes = x;
             uint32_t milliseconds = (uint32_t)(minutes * 60.0 * 1000.0);
