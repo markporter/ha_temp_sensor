@@ -1,0 +1,287 @@
+# ESP Home Environmental Sensor Configuration
+# Wemos D1 Mini + BME680 + 18650 Battery
+# Deep sleep enabled for extended battery life
+
+substitutions:
+  device_name: "s1"
+  friendly_name: "ENV-${device_name}"
+  device_description: "Battery powered environmental sensor with BME680"
+  
+  # Deep sleep configuration 
+  # IMPORTANT: Set to "false" for initial setup and programming
+  # Set to "true" for battery-powered operation (requires D0-RST connection)
+  deep_sleep_enabled: "true"  # Change to "true" to enable deep sleep mode
+  # NOTE: Sleep duration now controlled via runtime "Sleep Interval" number input
+  
+  # Sensor calibration offsets (edit these values directly)
+  temperature_offset: "0.0"  # Temperature offset in Fahrenheit
+  pressure_offset: "0.0"     # Pressure offset in hPa
+  humidity_offset: "0.0"     # Humidity offset in %
+  gas_resistance_offset: "100.0"  # Gas resistance offset in kΩ
+  voltage_multiplier: "7.4"  # Voltage divider multiplier
+  sleep_interval_minutes: "10.0"  # Sleep interval in minutes
+  
+  # NOTE: Sensor calibration now handled via substitution variables (no runtime adjustment)
+
+# set platform and board
+esp8266:
+  board: esp01_1m
+
+esphome:
+  name: "${device_name}"
+  friendly_name: ${friendly_name}
+  comment: ${device_description}
+  
+  # Boot priority and initial setup
+  on_boot:
+    priority: -100
+    then:
+      - logger.log: "Device booted, starting sensor readings..."
+      - delay: 2s  # Allow sensors to stabilize
+      
+      # Wait for Home Assistant API connection to sync entity states
+      - logger.log: "Waiting for Home Assistant connection to sync calibration values..."
+      - delay: 10s  # Allow HA to connect and sync number input states
+      
+      # Log the current calibration values after HA sync
+      - logger.log: 
+          format: "Calibration values - Temp: ${temperature_offset}°F, Pressure: ${pressure_offset} hPa, Humidity: ${humidity_offset}%%, Voltage: ${voltage_multiplier}x"
+      - logger.log:
+          format: "Gas Resistance Offset: ${gas_resistance_offset}kΩ"
+      - logger.log:
+          format: "Deep Sleep Enabled: ${deep_sleep_enabled}, Interval: ${sleep_interval_minutes} minutes"
+      
+      # Update deep sleep duration based on configured interval value
+      - lambda: |-
+          float minutes = ${sleep_interval_minutes};
+          uint32_t milliseconds = (uint32_t)(minutes * 60.0 * 1000.0);
+          ESP_LOGI("deep_sleep", "Setting initial sleep duration to %.1f minutes (%u ms)", minutes, milliseconds);
+          id(deep_sleep_control).set_sleep_duration(milliseconds);
+      
+      # Always take sensor readings first
+      - component.update: bme680_sensor
+      - delay: 5s  # Allow readings to complete and transmit
+      
+      # Now check deep sleep settings and jumper
+      - if:
+          condition:
+            and:
+              - lambda: 'return strcmp("${deep_sleep_enabled}", "true") == 0;'
+              - binary_sensor.is_on: sleep_jumper  # Check if jumper is connected to GND
+          then:
+            - logger.log: "Deep sleep mode active and jumper installed - entering sleep after readings"
+            - delay: 5s  # Final delay before sleep
+            - logger.log: "Entering deep sleep"
+            - deep_sleep.enter: deep_sleep_control
+          else:
+            - logger.log: "Deep sleep disabled or jumper not installed - staying awake"
+
+# WiFi configuration
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "${device_name} Fallback"
+    password: !secret ap_password
+
+# Captive portal for easy WiFi configuration
+captive_portal:
+
+# Enable logging
+logger:
+  level: WARN  # Reduced to WARN to save power
+  baud_rate: 115200  # Enable serial logging for debugging
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_encryption_key
+  
+  # Services for remote control
+  services:
+    - service: start_deep_sleep
+      then:
+        - logger.log: "Starting deep sleep via service call"
+        - homeassistant.service:
+            service: notify.notify
+            data:
+              title: "${friendly_name}"
+              message: "Manually entering deep sleep mode"
+        - deep_sleep.enter: deep_sleep_control
+    
+
+# Enable MQTT for retained messages during deep sleep
+mqtt:
+  broker: !secret mqtt_broker
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+  discovery: true  
+  topic_prefix: esphome/${device_name}  # Custom topic prefix
+  # MQTT will still handle retained messages in the background
+
+# Enable OTA updates
+ota:
+  platform: esphome
+  password: !secret ota_password
+
+# Web server for diagnostics (optional - disable to save power)  
+# DISABLED: To save power in battery mode
+# web_server:
+#   port: 80
+#   auth:
+#     username: !secret web_username
+#     password: !secret web_password
+
+# Deep sleep configuration (only active when deep_sleep_enabled is "true")
+# IMPORTANT: For deep sleep to work, you MUST connect GPIO16 (D0) to RST pin
+# This allows the ESP8266 to wake itself up from deep sleep
+deep_sleep:
+  id: deep_sleep_control
+  sleep_duration: 1min  # Default duration, will be updated dynamically
+  # Note: ESP8266 doesn't support wakeup_pin - uses GPIO16 to RST connection instead
+
+# I2C configuration for BME680
+i2c:
+  sda: GPIO4  # D2 on Wemos D1 Mini
+  scl: GPIO5  # D1 on Wemos D1 Mini
+  scan: true
+  frequency: 100kHz
+
+# BME680 sensor configuration
+sensor:
+  # BME680 Environmental Sensor
+  - platform: bme680
+    id: bme680_sensor
+    temperature:
+      name: "Temperature"
+      id: temperature
+      accuracy_decimals: 1
+      filters:
+        # Runtime calibration via substitution variable (Fahrenheit to Celsius conversion)
+        - lambda: |-
+            float offset_f = ${temperature_offset};
+            float offset_c = offset_f / 1.8;  // Convert Fahrenheit offset to Celsius
+            return x + offset_c;
+    pressure:
+      name: "Pressure"
+      id: pressure
+      accuracy_decimals: 1
+      filters:
+        # Runtime calibration via substitution variable
+        - lambda: 'return x + ${pressure_offset};'
+    humidity:
+      name: "Humidity"
+      id: humidity
+      accuracy_decimals: 1
+      filters:
+        # Runtime calibration via substitution variable
+        - lambda: 'return x + ${humidity_offset};'
+    gas_resistance:
+      name: "Gas Resistance"
+      id: gas_resistance
+      accuracy_decimals: 0
+      filters:
+        # Runtime calibration via substitution variable (convert kΩ to Ω)
+        - lambda: |-
+            float offset_kohms = ${gas_resistance_offset};
+            float offset_ohms = offset_kohms * 1000.0;  // Convert kΩ to Ω
+            return x + offset_ohms;
+    address: 0x77  # Default I2C address (0x76 is also common)
+    update_interval: 60s  # Poll every minute when sleep mode is disabled
+    
+    # BME680 specific configuration
+    iir_filter: 3x  # Internal IIR filter
+    heater:
+      temperature: 320  # Heater temperature in Celsius
+      duration: 150ms
+
+  # Air Quality Index (calculated from gas resistance)
+  - platform: template
+    name: "Air Quality Index"
+    id: air_quality_index
+    unit_of_measurement: "AQI"
+    device_class: aqi
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:air-filter"
+    entity_category: diagnostic
+    update_interval: never  # Only updates when gas_resistance updates
+    lambda: |-
+      float gas_val = id(gas_resistance).state;
+      
+      // BME680 gas resistance to AQI conversion
+      // Higher gas resistance = better air quality
+      // Typical ranges: 10kΩ (poor) to 200kΩ+ (excellent)
+      
+      if (gas_val >= 150000) {
+        return 50;   // Excellent (0-50 AQI)
+      } else if (gas_val >= 100000) {
+        return 75;   // Good (51-100 AQI)
+      } else if (gas_val >= 50000) {
+        return 125;  // Moderate (101-150 AQI)
+      } else if (gas_val >= 25000) {
+        return 175;  // Unhealthy for sensitive (151-200 AQI)
+      } else if (gas_val >= 10000) {
+        return 225;  // Unhealthy (201-250 AQI)
+      } else {
+        return 300;  // Very Unhealthy/Hazardous (251+ AQI)
+      }
+  
+  # Air Quality Percentage (0-100% scale)
+  - platform: template
+    name: "Air Quality Percentage"
+    id: air_quality_percentage
+    unit_of_measurement: "%"
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:leaf"
+    update_interval: never  # Only updates when gas_resistance updates
+    lambda: |-
+      float gas_val = id(gas_resistance).state;
+      
+      // Convert gas resistance to 0-100% scale
+      // 10kΩ = 0%, 200kΩ = 100%
+      float min_resistance = 10000.0;   // 10kΩ (poor air quality)
+      float max_resistance = 200000.0;  // 200kΩ (excellent air quality)
+      
+      if (gas_val <= min_resistance) return 0;
+      if (gas_val >= max_resistance) return 100;
+      
+      // Linear interpolation between min and max
+      float percentage = ((gas_val - min_resistance) / (max_resistance - min_resistance)) * 100.0;
+      return percentage;
+
+# Text sensors for diagnostics
+text_sensor:
+  # Device info
+  - platform: version
+    name: "${friendly_name} ESPHome Version"
+    entity_category: diagnostic
+  
+  # WiFi info - REDUCED to save memory
+  - platform: wifi_info
+    ip_address:
+      name: "${friendly_name} IP Address"
+      entity_category: diagnostic
+
+# Binary sensors
+binary_sensor:
+  # Device status
+  - platform: status
+    name: "Status"
+    entity_category: diagnostic
+  
+  # Sleep mode jumper detection (GPIO12/D6 to GND when active)
+  - platform: gpio
+    pin:
+      number: GPIO12  # D6 on Wemos D1 Mini
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    name: "Sleep Mode Jumper"
+    id: sleep_jumper
+    device_class: power
+    entity_category: diagnostic
