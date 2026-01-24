@@ -15,6 +15,19 @@ substitutions:
   # Without this connection, deep sleep will NOT work at all
   deep_sleep_enabled: "false"  # Change to "true" to enable deep sleep mode
   # NOTE: Sleep duration now controlled via runtime "Sleep Interval" number input
+
+  # Examples:
+  #  - Battery mode (deep-sleep):
+  #      deep_sleep_enabled: "true"
+  #      sleep_interval_minutes: "15.0"   # wake → measure → transmit → sleep
+  #  - Wired / bench testing (disable deep sleep):
+  #      deep_sleep_enabled: "false"
+  #      update_interval: 5s                # example fast polling for debugging
+  #
+  # DHT22-specific sampling guidance:
+  #  - Minimum recommended interval: >= 2 seconds (sensor timing requirement)
+  #  - Wired use: 2–60s depending on needs
+  #  - Battery (deep-sleep): use 15 minutes or longer to conserve power
   
   # Sensor calibration offsets (edit these values directly)
   temperature_offset: "0.0"  # Temperature offset in Fahrenheit
@@ -169,7 +182,11 @@ sensor:
       filters:
         # Runtime calibration via substitution variable
         - lambda: 'return x + ${humidity_offset};'
-    update_interval: 5s  # Reduced to 5s for testing to get more frequent updates
+    update_interval: 5s  # Reduced to 5s for testing; for production set per-mode recommendations
+    # Production recommendations:
+    #  - Battery (deep-sleep): set `sleep_interval_minutes` (>=15m recommended)
+    #  - Wired (no deep-sleep): 2s (minimum) → 60s (typical)
+    #  - Do NOT poll DHT22 faster than 2s — sensor timing will be unreliable
 
 # Text sensors for diagnostics
 text_sensor:

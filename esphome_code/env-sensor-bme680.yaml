@@ -12,6 +12,18 @@ substitutions:
   # Set to "true" for battery-powered operation (requires D0-RST connection)
   deep_sleep_enabled: "true"  # Change to "true" to enable deep sleep mode
   # NOTE: Sleep duration now controlled via runtime "Sleep Interval" number input
+
+  # Examples:
+  #  - Battery mode (recommended for 18650 builds):
+  #      deep_sleep_enabled: "true"
+  #      sleep_interval_minutes: "15.0"   # wake → measure → transmit → sleep
+  #  - Wired / bench testing (disable deep sleep to keep device awake):
+  #      deep_sleep_enabled: "false"
+  #      # adjust sensor `update_interval:` in the sensor block (1s–60s typical)
+  #
+  # Recommended sampling guidance:
+  #  - Battery (deep-sleep): 15–60 minutes (gas sensor: ≥15 minutes)
+  #  - Wired (no deep-sleep): 1–60 seconds (BME680 gas readings: ≥60s recommended)
   
   # Sensor calibration offsets (edit these values directly)
   temperature_offset: "0.0"  # Temperature offset in Fahrenheit
@@ -190,6 +202,10 @@ sensor:
             return x + offset_ohms;
     address: 0x77  # Default I2C address (0x76 is also common)
     update_interval: 60s  # Poll every minute when sleep mode is disabled
+    # NOTE: Recommended intervals (override as needed):
+    #  - Battery (deep-sleep): use the `sleep_interval_minutes` substitution (15–60m)
+    #  - Wired (no deep-sleep): 1–60s depending on application
+    #  - Gas sensor: readings are more meaningful with ≥60s (and often averaged)
     
     # BME680 specific configuration
     iir_filter: 3x  # Internal IIR filter

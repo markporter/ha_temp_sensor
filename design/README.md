@@ -111,6 +111,13 @@ For detailed setup and configuration information, see:
 - **Wake Reasons**: Timer-based wake from deep sleep
 - **Boot Process**: Quick sensor reading → WiFi connect → transmit → sleep
 
+#### Wired vs. Battery (deep-sleep) modes
+- **Battery mode (recommended)**: Enable deep sleep in the ESPHome config (for this repo set `deep_sleep_enabled: "true"` or include the `deep_sleep:` block). Device wakes, measures, reports, then sleeps — maximizes battery life. Typical recommended sampling: **15 minutes** (default) — increase to 30–60 minutes for longer life.
+- **Wired mode**: Disable deep sleep (`deep_sleep_enabled: "false"` or remove the `deep_sleep:` block). Device remains awake and may sample much more frequently (1–60s) depending on your use case and network load.
+- **How to switch**: toggle the `deep_sleep_enabled` substitution (see `esphome_code/*.yaml`) or comment/uncomment the `deep_sleep:` section in the device YAML.
+
+> Tip: For production battery builds ensure the D0 (GPIO16) → RST jumper is installed; otherwise enable/disable deep sleep only for testing when device is powered by USB.
+
 ### Battery Monitoring
 - **Method**: ADC reading of battery voltage
 - **Frequency**: With each sensor reading
@@ -136,9 +143,12 @@ For detailed setup and configuration information, see:
 - Signal Strength: `signal_strength`
 
 ### Update Intervals
-- **Sensor readings**: Every 15 minutes
-- **Battery status**: Every 15 minutes
-- **WiFi diagnostics**: Every 15 minutes
+- **Battery (deep-sleep)**: Default **15 minutes** between full wake→measure→transmit cycles (configurable). Recommended range: **15–60 minutes** for long-life battery operation.
+- **Wired (no deep-sleep)**: Device can sample much more frequently — typical range **1–60s** depending on need and network load.
+- **Sensor-specific guidance**:
+  - **DHT22**: hardware minimum ~2s between readings (use ≥2s; for stability and battery life use ≥15s when wired, ≥15 minutes in deep-sleep battery mode).
+  - **BME680**: temperature/pressure/humidity can be polled faster, but the **gas** sensor benefits from longer intervals and averaging — recommend **≥60s** for meaningful gas readings and **≥15 minutes** for battery gas sampling.
+- **Battery status & WiFi diagnostics**: Align with sensor readings in deep-sleep mode to avoid extra wake cycles (commonly every 15 minutes).
 
 ## Enclosure Considerations
 
