@@ -1,0 +1,240 @@
+# Unified ESPHome config for the ENV sensor (DHT22 <default> / BME680)
+# ------------------------------------------------------------------
+# Purpose:
+# - Single template that supports either DHT22 (default, uncommented) or BME680 (commented).
+# - Clear, in-file instructions for selecting the sensor and toggling deep-sleep (battery) vs wired mode.
+#
+# How to select your sensor (pick ONE):
+# - DHT22 (default): leave the DHT22 sensor block enabled and *comment out* the entire BME680 sensor block.
+# - BME680: comment out the DHT22 sensor block and uncomment the BME680 sensor block **AND** enable I2C pins below.
+#
+# Note: ESPHome does not support conditional compilation inside a single YAML; you must comment/uncomment the unused
+# sensor block before compiling to avoid unused-component warnings and to keep firmware minimal.
+#
+# Quick defaults in this file:
+# - Active sensor: DHT22 (uncomment the BME680 block to use BME680 instead)
+# - deep_sleep_enabled: "false" (safer for initial setup). Set to "true" for battery deployments (requires D0->RST jumper).
+# - DHT22 minimum read interval: >= 2s (hardware requirement). Use >= 15s for wired profiling or >= 15m in deep-sleep.
+# - BME680 gas readings: prefer >= 60s (or use deep-sleep >= 15m for battery builds).
+# ------------------------------------------------------------------
+
+substitutions:
+  device_name: "env-01"
+  friendly_name: "ENV-${device_name}"
+  device_description: "Unified ENV sensor (DHT22 or BME680)"
+
+  # Deep-sleep configuration
+  # - Set to "true" for battery-powered operation (requires physical D0->RST jumper)
+  # - Set to "false" for wired/bench use (device stays awake)
+  deep_sleep_enabled: "false"
+  sleep_interval_minutes: "15.0"   # used only when deep_sleep_enabled is "true"
+
+  # Sensor offsets (shared)
+  temperature_offset: "0.0"
+  humidity_offset: "0.0"
+
+# Platform/board
+esp8266:
+  board: esp01_1m
+
+esphome:
+  name: "${device_name}"
+  friendly_name: ${friendly_name}
+  comment: ${device_description}
+
+  on_boot:
+    priority: -100
+    then:
+      - logger.log: "Device booted — starting sensor initialization"
+      - delay: 2s
+      - logger.log: 
+          format: "Calibration values - Temp: ${temperature_offset}°F, Humidity: ${humidity_offset}%%"
+      - delay: 2s
+
+      # --- SENSOR UPDATE (uncomment the line matching the sensor you've enabled) ---
+      - component.update: dht_sensor    # <-- leave active for DHT22
+      # - component.update: bme680_sensor  # <-- uncomment this line if you enable BME680
+      - delay: 4s
+
+      - if:
+          condition:
+            lambda: 'return strcmp("${deep_sleep_enabled}", "true") == 0;'
+          then:
+            - logger.log: "Deep sleep compiled-in and enabled — entering sleep after readings"
+            - delay: 3s
+            - deep_sleep.enter: deep_sleep_control
+          else:
+            - logger.log: "Deep sleep disabled — remaining awake (wired/bench mode)"
+
+# Networking / integrations
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${device_name} Fallback"
+    password: !secret ap_password
+
+captive_portal:
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+mqtt:
+  broker: !secret mqtt_broker
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+  discovery: true
+  topic_prefix: esphome/${device_name}
+
+ota:
+  password: !secret ota_password
+
+# Deep sleep (present but only used when deep_sleep_enabled is "true")
+# IMPORTANT: For ESP8266 deep sleep to work the D0 (GPIO16) pin MUST be physically connected to RST
+deep_sleep:
+  id: deep_sleep_control
+  sleep_duration: 1min  # overwritten at runtime from ${sleep_interval_minutes}
+
+# --- SHARED SENSOR/DIAGNOSTICS ---
+
+# Minimal diagnostics and version info
+text_sensor:
+  - platform: version
+    name: "${friendly_name} ESPHome Version"
+    entity_category: diagnostic
+
+  - platform: wifi_info
+    ip_address:
+      name: "${friendly_name} IP Address"
+      entity_category: diagnostic
+
+binary_sensor:
+  - platform: status
+    name: "${friendly_name} Status"
+    entity_category: diagnostic
+
+# --- SENSOR BLOCKS ---
+
+# -----------------------------
+# DHT22 (DEFAULT - enabled)
+# -----------------------------
+sensor:
+  - platform: dht
+    id: dht_sensor
+    pin: GPIO14  # D5 on Wemos D1 Mini
+    model: DHT22
+    temperature:
+      name: "${friendly_name} Temperature"
+      id: temperature
+      accuracy_decimals: 1
+      filters:
+        - lambda: |-
+            float offset_f = ${temperature_offset};
+            float offset_c = offset_f / 1.8;
+            return x + offset_c;
+    humidity:
+      name: "${friendly_name} Humidity"
+      id: humidity
+      accuracy_decimals: 1
+      filters:
+        - lambda: 'return x + ${humidity_offset};'
+    update_interval: 5s  # TESTING default — change per recommendations below
+
+# DHT22 notes:
+# - Minimum polling interval: 2s (do NOT poll faster)
+# - Wired/bench recommended: 2s–60s depending on needs
+# - Battery (deep-sleep): do NOT use `update_interval` — set `sleep_interval_minutes` (>=15m recommended)
+
+# -----------------------------
+# BME680 (ALTERNATIVE - COMMENTED OUT)
+# -----------------------------
+# To enable BME680:
+# 1) Comment out the entire DHT22 sensor block above
+# 2) Uncomment the i2c: block below and the BME680 sensor block
+# 3) Uncomment the `component.update: bme680_sensor` line in `on_boot`
+
+#i2c:
+#  sda: GPIO4  # D2
+#  scl: GPIO5  # D1
+#  scan: true
+#  frequency: 100kHz
+
+#- platform: bme680
+#  id: bme680_sensor
+#  temperature:
+#    name: "${friendly_name} Temperature"
+#    id: temperature
+#    accuracy_decimals: 1
+#  pressure:
+#    name: "${friendly_name} Pressure"
+#    id: pressure
+#    accuracy_decimals: 1
+#  humidity:
+#    name: "${friendly_name} Humidity"
+#    id: humidity
+#    accuracy_decimals: 1
+#  gas_resistance:
+#    name: "${friendly_name} Gas Resistance"
+#    id: gas_resistance
+#    accuracy_decimals: 0
+#  address: 0x76
+#  update_interval: 60s
+#  iir_filter: 3x
+#  heater:
+#    temperature: 320
+#    duration: 150ms
+#
+# BME680 notes:
+# - Gas sensor requires burn-in and benefits from longer intervals (>=60s)
+# - For battery builds use deep-sleep with sleep_interval_minutes >= 15
+
+# -----------------------------
+# TEMPLATE / AUX SENSORS
+# -----------------------------
+# (AQI and other templates tied to BME680 should be uncommented along with BME680)
+
+# Example template (BME680-only) - keep commented unless BME680 enabled
+#- platform: template
+#  name: "${friendly_name} Air Quality Index"
+#  id: air_quality_index
+#  unit_of_measurement: "AQI"
+#  accuracy_decimals: 0
+#  update_interval: never
+#  lambda: |-
+#    float gas_val = id(gas_resistance).state;
+#    if (gas_val >= 150000) return 50;
+#    if (gas_val >= 100000) return 75;
+#    if (gas_val >= 50000) return 125;
+#    if (gas_val >= 25000) return 175;
+#    if (gas_val >= 10000) return 225;
+#    return 300;
+
+# -----------------------------
+# USAGE / RECOMMENDATIONS
+# -----------------------------
+# To build for DHT22 (default):
+#  - Ensure the DHT22 block above is present (uncommented)
+#  - Keep the BME680 block and the i2c: block commented out
+#  - Flash firmware via USB for initial setup (deep_sleep_enabled: "false")
+#  - For battery: set deep_sleep_enabled: "true", install D0->RST jumper, set sleep_interval_minutes >= 15
+#
+# To build for BME680:
+#  - Comment out the DHT22 sensor block
+#  - Uncomment the i2c: block and the BME680 sensor block
+#  - Uncomment `component.update: bme680_sensor` in `on_boot`
+#  - Recommended `update_interval`: >= 60s for gas readings; use deep-sleep for battery builds
+#
+# Quick compile & upload (USB):
+#   esphome compile esphome_code/env-sensor-unified.yaml
+#   esphome upload esphome_code/env-sensor-unified.yaml --device <serial-port>
+#
+# Quick compile for OTA (after initial USB flash):
+#   esphome run esphome_code/env-sensor-unified.yaml
+#
+# -----------------------------
+# END
+# -----------------------------

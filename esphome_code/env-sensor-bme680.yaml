@@ -30,8 +30,8 @@ substitutions:
   pressure_offset: "0.0"     # Pressure offset in hPa
   humidity_offset: "0.0"     # Humidity offset in %
   gas_resistance_offset: "100.0"  # Gas resistance offset in kΩ
-  voltage_multiplier: "7.4"  # Voltage divider multiplier
   sleep_interval_minutes: "10.0"  # Sleep interval in minutes
+  # NOTE: on-device battery/ADC monitoring has been removed to maximize battery life
   
   # NOTE: Sensor calibration now handled via substitution variables (no runtime adjustment)
 
@@ -57,7 +57,7 @@ esphome:
       
       # Log the current calibration values after HA sync
       - logger.log: 
-          format: "Calibration values - Temp: ${temperature_offset}°F, Pressure: ${pressure_offset} hPa, Humidity: ${humidity_offset}%%, Voltage: ${voltage_multiplier}x"
+          format: "Calibration values - Temp: ${temperature_offset}°F, Pressure: ${pressure_offset} hPa, Humidity: ${humidity_offset}%%"
       - logger.log:
           format: "Gas Resistance Offset: ${gas_resistance_offset}kΩ"
       - logger.log:

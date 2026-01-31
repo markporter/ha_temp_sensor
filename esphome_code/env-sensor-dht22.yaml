@@ -33,6 +33,7 @@ substitutions:
   temperature_offset: "0.0"  # Temperature offset in Fahrenheit
   humidity_offset: "0.0"     # Humidity offset in %
   sleep_interval_minutes: "10.0"  # Sleep interval in minutes
+  # NOTE: on-device battery/ADC monitoring has been removed to maximize battery life
   
   # NOTE: Sensor calibration now handled via substitution variables (no runtime adjustment)
 
@@ -58,7 +59,7 @@ esphome:
       
       # Log the current calibration values after HA sync
       - logger.log: 
-          format: "Calibration values - Temp: ${temperature_offset}°F, Humidity: ${humidity_offset}%%, Voltage: ${voltage_multiplier}x"
+          format: "Calibration values - Temp: ${temperature_offset}°F, Humidity: ${humidity_offset}%%"
       - logger.log:
           format: "Deep Sleep Enabled: ${deep_sleep_enabled}, Interval: ${sleep_interval_minutes} minutes"
       

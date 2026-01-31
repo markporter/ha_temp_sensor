@@ -66,7 +66,7 @@ Before assembly, test each component individually:
 - Power wires (VIN, GND): 4-6 inches
 - I2C wires (SDA, SCL): 3-4 inches
 - Deep sleep jumper (D0 to RST): 1-2 inches
-- Battery monitoring (if used): 3 inches
+- A0 (reserved): leave unconnected (on-device battery monitoring disabled)
 
 **Wire Color Coding (Recommended):**
 - Red: Positive power (VIN, VCC)
@@ -74,7 +74,7 @@ Before assembly, test each component individually:
 - Blue: SDA data line
 - Yellow: SCL clock line
 - Purple: Deep sleep jumper (D0 to RST)
-- Green: Battery monitoring
+- Green: spare / reserved (A0 unused by firmware)
 
 **Prepare Wires:**
 1. Strip 1/4 inch from each end
@@ -97,7 +97,7 @@ Before assembly, test each component individually:
 4. **D1 (GPIO5)**: Solder yellow wire (to BME680 SCL)
 5. **D2 (GPIO4)**: Solder blue wire (to BME680 SDA)
 6. **D0 to RST**: **CRITICAL** - Solder short jumper wire between D0 and RST pins for deep sleep
-7. **A0 Pin** (optional): Green wire for battery monitoring
+7. **A0 Pin**: Not used by firmware (leave unconnected). On-device ADC battery monitoring has been disabled to preserve battery life.
 
 **BME680 Sensor Connections:**
 1. **VCC Pin**: Red wire from Wemos 3.3V
@@ -162,11 +162,7 @@ esphome upload env-sensor.yaml --device /dev/ttyUSB0
 3. **Pressure**: Compare with local weather station
 4. **Gas Sensor**: Requires 48-hour burn-in period
 
-**Battery Monitoring Calibration:**
-1. Measure actual battery voltage with multimeter
-2. Compare with sensor reading
-3. Adjust voltage divider multiplier in configuration
-4. Test at various battery charge levels
+<!-- Battery monitoring removed: firmware no longer publishes battery-voltage or battery-percentage entities. For battery health checks use an external meter or a dedicated low-power monitor. -->
 
 **Field Testing:**
 1. **Range Test**: Verify WiFi connectivity at installation location
@@ -208,19 +204,7 @@ esphome upload env-sensor.yaml --device /dev/ttyUSB0
 4. **History**: Enable long-term statistics for trending
 
 **Automation Setup:**
-```yaml
-# Example: Low battery notification
-automation:
-  - alias: "Environmental Sensor Low Battery"
-    trigger:
-      platform: numeric_state
-      entity_id: sensor.environmental_sensor_01_battery_level
-      below: 20
-    action:
-      service: notify.mobile_app
-      data:
-        message: "Environmental sensor battery low ({{ states('sensor.environmental_sensor_01_battery_level') }}%)"
-```
+<!-- Low-battery automation examples removed: firmware no longer exposes battery-level entities. Use external monitoring or scheduled maintenance instead. -->
 
 ## Troubleshooting
 

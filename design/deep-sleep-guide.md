@@ -8,14 +8,12 @@ The ESP Home environmental sensor now supports configurable deep sleep mode that
 ### 🔄 **Normal Mode (Default)**
 - **Deep Sleep**: Disabled
 - **Sensor Updates**: Every 30 seconds
-- **Battery Updates**: Every 60 seconds  
 - **Power Consumption**: ~80-200mA active
 - **Use Case**: Initial setup, testing, continuous monitoring
 
 ### 💤 **Deep Sleep Mode** 
 - **Deep Sleep**: Enabled
 - **Sensor Updates**: Once per wake cycle (every 15 minutes)
-- **Battery Updates**: Once per wake cycle
 - **Power Consumption**: ~20µA sleep, ~200mA for 10 seconds active
 - **Use Case**: Battery-powered deployment, extended operation
 
@@ -115,7 +113,6 @@ Several controls are available in Home Assistant:
 ```yaml
 deep_sleep_enabled: "false"
 sensor_update_interval: "30s"
-battery_update_interval: "60s"
 # Provides real-time monitoring, powered by USB
 ```
 
@@ -173,12 +170,7 @@ You can still set default sleep time in the configuration:
 sleep_duration: "30min"  # Default interval (overridden by HA control)
 ```
 
-### Battery Monitoring Thresholds
-Customize low battery alerts:
-```yaml
-low_battery_threshold: "3.4"  # Higher threshold for earlier warning
-low_battery_percentage: "15"  # Alert at 15% instead of 20%
-```
+<!-- Battery monitoring and low-battery thresholds removed from firmware to maximize battery life. -->
 
 ## Best Practices
 
@@ -211,9 +203,6 @@ The device provides these controls in Home Assistant:
 
 #### **Monitoring Sensors**
 - **Sleep Interval Setting** (`sensor`) - Current sleep interval display  
-- **Battery Level** (`sensor`) - Battery percentage (0-100%)
-- **Battery Voltage** (`sensor`) - Battery voltage in volts
-- **Low Battery** (`binary_sensor`) - Low battery alert
 
 #### **Environmental Sensors**
 - **Temperature** (`sensor`) - Ambient temperature
@@ -236,8 +225,6 @@ entities:
     name: Apply Settings
   - entity: sensor.environmental_sensor_01_sleep_interval_setting
     name: Current Setting
-  - entity: sensor.environmental_sensor_01_battery_level
-    name: Battery Level
 ```
 
 ## Frequently Asked Questions

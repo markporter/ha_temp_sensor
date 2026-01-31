@@ -118,11 +118,8 @@ For detailed setup and configuration information, see:
 
 > Tip: For production battery builds ensure the D0 (GPIO16) → RST jumper is installed; otherwise enable/disable deep sleep only for testing when device is powered by USB.
 
-### Battery Monitoring
-- **Method**: ADC reading of battery voltage
-- **Frequency**: With each sensor reading
-- **Low Battery Threshold**: 3.2V (configurable)
-- **Battery Level Calculation**: Based on Li-ion discharge curve
+#### Battery monitoring (removed)
+- **Removed**: On-device battery-voltage monitoring has been disabled in the firmware to maximize battery life. Use an external meter or a dedicated low-power monitor if you require battery telemetry.
 
 ## ESP Home Integration Features
 
@@ -131,15 +128,12 @@ For detailed setup and configuration information, see:
 - **Humidity** (%RH)
 - **Pressure** (hPa/inHg)
 - **Gas Resistance** (Ω) - Air quality indicator
-- **Battery Level** (%)
-- **Battery Voltage** (V)
 - **WiFi Signal Strength** (dBm)
 
 ### Device Classes
 - Temperature: `temperature`
 - Humidity: `humidity`
 - Pressure: `pressure`
-- Battery: `battery`
 - Signal Strength: `signal_strength`
 
 ### Update Intervals
@@ -148,7 +142,7 @@ For detailed setup and configuration information, see:
 - **Sensor-specific guidance**:
   - **DHT22**: hardware minimum ~2s between readings (use ≥2s; for stability and battery life use ≥15s when wired, ≥15 minutes in deep-sleep battery mode).
   - **BME680**: temperature/pressure/humidity can be polled faster, but the **gas** sensor benefits from longer intervals and averaging — recommend **≥60s** for meaningful gas readings and **≥15 minutes** for battery gas sampling.
-- **Battery status & WiFi diagnostics**: Align with sensor readings in deep-sleep mode to avoid extra wake cycles (commonly every 15 minutes).
+- **WiFi diagnostics**: Align with sensor readings in deep-sleep mode to avoid extra wake cycles (commonly every 15 minutes).
 
 ## Enclosure Considerations
 
@@ -177,7 +171,6 @@ For detailed setup and configuration information, see:
 
 ### ESP Home Configuration
 - Deep sleep power management
-- Battery level monitoring with low-battery alerts
 - WiFi connection handling with retry logic
 - OTA update capability
 - Diagnostic sensors for troubleshooting
@@ -186,7 +179,6 @@ For detailed setup and configuration information, see:
 - Automatic device discovery
 - Historical data logging
 - Automation triggers based on sensor values
-- Low battery notifications
 - Device unavailable alerts
 
 ## Troubleshooting Guide
