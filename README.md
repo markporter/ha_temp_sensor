@@ -100,9 +100,9 @@ This project creates a battery-powered environmental sensor using ESP Home for i
 ## Documentation
 
 For detailed setup and configuration information, see:
-- **[Wiring Diagram](wiring-diagram.md)** - Complete visual wiring diagram with Mermaid charts
-- **[Assembly Guide](assembly-guide.md)** - Step-by-step assembly and testing instructions  
-- **[Deep Sleep Configuration](deep-sleep-guide.md)** - Configurable power management modes
+- **[Wiring Diagram](design/wiring-diagram.md)** - Complete visual wiring diagram with Mermaid charts
+- **[Assembly Guide](design/assembly-guide.md)** - Step-by-step assembly and testing instructions  
+- **[Deep Sleep Configuration](design/deep-sleep-guide.md)** - Configurable power management modes
 
 ## Power Management Strategy
 
